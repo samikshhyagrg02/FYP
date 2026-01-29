@@ -1,0 +1,39 @@
+{
+  "name": "mindbloom",
+  "version": "1.0.0",
+  "description": "MindBloom - A comprehensive mental health platform with React frontend and Node.js backend",
+  "scripts": {
+    "dev": "concurrently \"npm run server:dev\" \"npm run client:dev\"",
+    "start": "concurrently \"npm run server:start\" \"npm run client:start\"",
+    "build": "npm run client:build",
+    "server:dev": "cd server && npm run dev",
+    "server:start": "cd server && npm start",
+    "server:install": "cd server && npm install",
+    "client:dev": "cd client && npm start",
+    "client:start": "cd client && npm start",
+    "client:build": "cd client && npm run build",
+    "client:install": "cd client && npm install",
+    "install:all": "npm run server:install && npm run client:install",
+    "setup": "npm run install:all"
+  },
+  "devDependencies": {
+    "@tailwindcss/postcss": "^4.1.18",
+    "concurrently": "^8.2.0",
+    "postcss": "^8.5.6"
+  },
+  "keywords": [
+    "mental-health",
+    "mood-tracking",
+    "wellness",
+    "react",
+    "nodejs",
+    "mongodb",
+    "tailwindcss"
+  ],
+  "author": "MindBloom Team",
+  "license": "MIT",
+  "workspaces": [
+    "client",
+    "server"
+  ]
+}
