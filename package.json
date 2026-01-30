@@ -17,9 +17,10 @@
     "setup": "npm run install:all"
   },
   "devDependencies": {
-    "@tailwindcss/postcss": "^4.1.18",
+    "autoprefixer": "^10.4.23",
     "concurrently": "^8.2.0",
-    "postcss": "^8.5.6"
+    "postcss": "^8.5.6",
+    "tailwindcss": "^3.4.19"
   },
   "keywords": [
     "mental-health",
