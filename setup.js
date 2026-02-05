@@ -10,19 +10,44 @@ console.log('========================\n');
 // Generate a secure JWT secret
 const jwtSecret = crypto.randomBytes(64).toString('hex');
 
-// Create .env file if it doesn't exist
+// Create root .env for repository-level defaults (if missing)
 const envPath = path.join(__dirname, '.env');
 if (!fs.existsSync(envPath)) {
-    const envContent = `PORT=3000
+    const envContent = `PORT=3001
 MONGODB_URI=mongodb://localhost:27017/mindbloom
 JWT_SECRET=${jwtSecret}
-CLIENT_URL=http://localhost:3000
+CLIENT_URL=http://localhost:3002
 NODE_ENV=development`;
 
     fs.writeFileSync(envPath, envContent);
-    console.log('✅ Created .env file with secure JWT secret');
+    console.log('✅ Created root .env file with secure JWT secret');
 } else {
-    console.log('⚠️  .env file already exists, skipping creation');
+    console.log('⚠️  root .env file already exists, skipping creation');
+}
+
+// Create server/.env with recommended dev values
+const serverEnvPath = path.join(__dirname, 'server', '.env');
+if (!fs.existsSync(serverEnvPath)) {
+    const serverEnv = `PORT=3001
+MONGODB_URI=mongodb://localhost:27017/mindbloom
+JWT_SECRET=${jwtSecret}
+CLIENT_URL=http://localhost:3002
+NODE_ENV=development`;
+    fs.writeFileSync(serverEnvPath, serverEnv);
+    console.log('✅ Created server/.env with recommended defaults');
+} else {
+    console.log('⚠️  server/.env already exists, skipping creation');
+}
+
+// Create client/.env with recommended dev values
+const clientEnvPath = path.join(__dirname, 'client', '.env');
+if (!fs.existsSync(clientEnvPath)) {
+    const clientEnv = `REACT_APP_API_URL=http://localhost:3001
+PORT=3002`;
+    fs.writeFileSync(clientEnvPath, clientEnv);
+    console.log('✅ Created client/.env with recommended defaults');
+} else {
+    console.log('⚠️  client/.env already exists, skipping creation');
 }
 
 // Check if MongoDB is accessible (basic check)

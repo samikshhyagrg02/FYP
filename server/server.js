@@ -8,14 +8,15 @@ require('dotenv').config();
 const authRoutes = require('./routes/auth');
 const userRoutes = require('./routes/user');
 const moodRoutes = require('./routes/mood');
+const journalRoutes = require('./routes/journal');
 
 const app = express();
-const PORT = process.env.PORT || 3000;
+const PORT = process.env.PORT || 3001; // default to 3001 to match README
 
 // Security middleware
 app.use(helmet());
 app.use(cors({
-  origin: process.env.CLIENT_URL || 'http://localhost:3000',
+  origin: process.env.CLIENT_URL || 'http://localhost:3002',
   credentials: true
 }));
 
@@ -45,6 +46,7 @@ mongoose.connect(process.env.MONGODB_URI || 'mongodb://localhost:27017/mindbloom
 app.use('/auth', authRoutes);
 app.use('/user', userRoutes);
 app.use('/api/mood', moodRoutes);
+app.use('/api/journal', journalRoutes);
 
 // Serve landing page
 app.get('/', (req, res) => {
@@ -62,8 +64,19 @@ app.use((req, res) => {
   res.status(404).json({ error: 'Route not found' });
 });
 
-app.listen(PORT, () => {
+// Start server with helpful messages and handle EADDRINUSE more gracefully
+const server = app.listen(PORT, () => {
   console.log(`MindBloom server running on port ${PORT}`);
+});
+
+server.on('error', (err) => {
+  if (err.code === 'EADDRINUSE') {
+    console.error(`Port ${PORT} is already in use. Try stopping other instances or change PORT in your environment.`);
+    process.exit(1);
+  } else {
+    console.error('Server error:', err);
+    process.exit(1);
+  }
 });
 
 module.exports = app;

@@ -31,7 +31,13 @@ async function apiCall(endpoint, options = {}) {
 
     try {
         const response = await fetch(`${API_BASE}${endpoint}`, config);
-        const data = await response.json();
+        const text = await response.text();
+        let data = {};
+        try {
+            data = text ? JSON.parse(text) : {};
+        } catch (e) {
+            data = { raw: text };
+        }
 
         if (!response.ok) {
             throw new Error(data.error || `HTTP error! status: ${response.status}`);
@@ -40,6 +46,9 @@ async function apiCall(endpoint, options = {}) {
         return data;
     } catch (error) {
         console.error('API call failed:', error);
+        if (error instanceof TypeError) {
+            throw new Error('Network error: could not reach API. Ensure the server is running and API URL is correct.');
+        }
         throw error;
     }
 }
