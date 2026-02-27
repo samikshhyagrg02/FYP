@@ -9,6 +9,7 @@ const authRoutes = require('./routes/auth');
 const userRoutes = require('./routes/user');
 const moodRoutes = require('./routes/mood');
 const journalRoutes = require('./routes/journal');
+const communityRoutes = require('./routes/community');
 
 const app = express();
 const PORT = process.env.PORT || 3001; // default to 3001 to match README
@@ -20,10 +21,11 @@ app.use(cors({
   credentials: true
 }));
 
-// Rate limiting
+// Rate limiting - more lenient in development
 const limiter = rateLimit({
   windowMs: 15 * 60 * 1000, // 15 minutes
-  max: 100 // limit each IP to 100 requests per windowMs
+  max: process.env.NODE_ENV === 'production' ? 100 : 1000, // 1000 in dev, 100 in production
+  message: { error: 'Too many requests, please try again later.' }
 });
 app.use(limiter);
 
@@ -47,6 +49,7 @@ app.use('/auth', authRoutes);
 app.use('/user', userRoutes);
 app.use('/api/mood', moodRoutes);
 app.use('/api/journal', journalRoutes);
+app.use('/api/community', communityRoutes);
 
 // Serve landing page
 app.get('/', (req, res) => {
