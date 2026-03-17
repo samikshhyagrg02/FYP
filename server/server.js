@@ -10,6 +10,7 @@ const userRoutes = require('./routes/user');
 const moodRoutes = require('./routes/mood');
 const journalRoutes = require('./routes/journal');
 const communityRoutes = require('./routes/community');
+const gamificationRoutes = require('./routes/gamification');
 
 const app = express();
 const PORT = process.env.PORT || 3001; // default to 3001 to match README
@@ -50,6 +51,7 @@ app.use('/user', userRoutes);
 app.use('/api/mood', moodRoutes);
 app.use('/api/journal', journalRoutes);
 app.use('/api/community', communityRoutes);
+app.use('/api/gamification', gamificationRoutes);
 
 // Serve landing page
 app.get('/', (req, res) => {
