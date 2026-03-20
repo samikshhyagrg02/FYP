@@ -104,6 +104,11 @@ router.post('/login', loginValidation, async (req, res) => {
       return res.status(401).json({ error: 'Invalid credentials' });
     }
 
+    // Block banned users from logging in
+    if (user.isBanned) {
+      return res.status(403).json({ error: 'Your account has been banned. Contact support for assistance.' });
+    }
+
     const token = generateToken(user._id);
 
     res.json({

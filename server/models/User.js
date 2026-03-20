@@ -27,6 +27,17 @@ const userSchema = new mongoose.Schema({
     type: Boolean,
     default: false
   },
+  role: {
+    type: String,
+    enum: ['user', 'admin'],
+    default: 'user'
+  },
+  isBanned: {
+    type: Boolean,
+    default: false
+  },
+  bannedAt: { type: Date, default: null },
+  bannedReason: { type: String, default: null },
   preferences: {
     theme: {
       type: String,
