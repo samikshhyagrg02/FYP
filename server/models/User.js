@@ -56,6 +56,10 @@ const userSchema = new mongoose.Schema({
   sessionId: {
     type: String,
     sparse: true
+  },
+  lastSeen: {
+    type: Date,
+    default: null
   }
 }, {
   timestamps: true

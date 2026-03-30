@@ -18,6 +18,7 @@ const adminRoutes = require('./routes/admin');
 const chatRoutes  = require('./routes/chat');
 const ChatMessage = require('./models/ChatMessage');
 const ChatBlock   = require('./models/ChatBlock');
+const User        = require('./models/User');
 
 const app = express();
 const httpServer = http.createServer(app); // wrap app in http server for Socket.IO
@@ -49,6 +50,13 @@ io.on('connection', (socket) => {
   // Each user joins a personal room named by their userId
   socket.join(socket.userId);
 
+  // ── Online/Offline tracking ─────────────────────────────────────────────────
+  const onlineUsers = app.get('onlineUsers') || new Set();
+  onlineUsers.add(socket.userId);
+  app.set('onlineUsers', onlineUsers);
+  // Broadcast updated online list to all connected clients
+  io.emit('chat:online', Array.from(onlineUsers));
+
   // Handle sending a message
   socket.on('chat:send', async (data) => {
     try {
@@ -67,19 +75,36 @@ io.on('connection', (socket) => {
         return;
       }
 
+      // Determine if this is a message request.
+      // A message is a REQUEST if the receiver has NEVER sent an accepted
+      // (non-request) message to the sender before.
+      // Only check one direction: has receiver → sender ever happened?
+      const receiverHasReplied = await ChatMessage.findOne({
+        senderId:   receiverId,        // receiver previously sent
+        receiverId: socket.userId,     // to the current sender
+        isRequest:  false,             // and it was an accepted message
+      });
+      const isRequest = !receiverHasReplied;
+
       // Persist message
       const msg = await ChatMessage.create({
         senderId:   socket.userId,
         receiverId,
         content:    content.trim(),
         status:     'sent',
+        isRequest,
       });
 
       const populated = await msg.populate(['senderId', 'receiverId']);
 
-      // Emit to receiver's room (real-time delivery)
-      io.to(receiverId).emit('chat:message', populated);
-      // Confirm back to sender
+      if (isRequest) {
+        // Notify receiver of a new message request (separate event)
+        io.to(receiverId).emit('chat:request', populated);
+      } else {
+        // Normal message — deliver to receiver's room
+        io.to(receiverId).emit('chat:message', populated);
+      }
+      // Always confirm back to sender
       socket.emit('chat:message', populated);
     } catch (err) {
       console.error('Socket chat:send error', err);
@@ -87,7 +112,30 @@ io.on('connection', (socket) => {
     }
   });
 
-  socket.on('disconnect', () => {});
+  // ── Seen receipt ────────────────────────────────────────────────────────────
+  // Client emits this when they open a conversation
+  socket.on('chat:seen', async ({ senderId }) => {
+    try {
+      await ChatMessage.updateMany(
+        { senderId, receiverId: socket.userId, status: { $ne: 'seen' }, isRequest: false },
+        { status: 'seen' }
+      );
+      // Notify the original sender that their messages were seen
+      io.to(senderId).emit('chat:seen', { by: socket.userId });
+    } catch (err) {
+      console.error('Socket chat:seen error', err);
+    }
+  });
+
+  socket.on('disconnect', () => {
+    // Remove from online set and broadcast
+    const online = app.get('onlineUsers') || new Set();
+    online.delete(socket.userId);
+    app.set('onlineUsers', online);
+    // Store last seen time on user document (best-effort)
+    User.findByIdAndUpdate(socket.userId, { lastSeen: new Date() }).catch(() => {});
+    io.emit('chat:online', Array.from(online));
+  });
 });
 
 // Security middleware
@@ -99,8 +147,8 @@ app.use(cors({
 
 // Rate limiting - more lenient in development
 const limiter = rateLimit({
-  windowMs: 15 * 60 * 1000, // 15 minutes
-  max: process.env.NODE_ENV === 'production' ? 100 : 1000, // 1000 in dev, 100 in production
+  windowMs: 15 * 60 * 1000,
+  max: process.env.NODE_ENV === 'production' ? 100 : 1000,
   message: { error: 'Too many requests, please try again later.' }
 });
 app.use(limiter);
@@ -108,9 +156,6 @@ app.use(limiter);
 // Body parsing middleware
 app.use(express.json({ limit: '10mb' }));
 app.use(express.urlencoded({ extended: true }));
-
-// Serve static files
-app.use(express.static('public'));
 
 // Database connection
 mongoose.connect(process.env.MONGODB_URI || 'mongodb://localhost:27017/mindbloom', {
@@ -129,11 +174,6 @@ app.use('/api/community', communityRoutes);
 app.use('/api/gamification', gamificationRoutes);
 app.use('/api/admin', adminRoutes);
 app.use('/api/chat',  chatRoutes);
-
-// Serve landing page
-app.get('/', (req, res) => {
-  res.sendFile(__dirname + '/public/index.html');
-});
 
 // Error handling middleware
 app.use((err, req, res, next) => {

@@ -10,32 +10,31 @@ const router = express.Router();
 router.use(authenticateToken);
 
 // ── GET /api/chat/users ───────────────────────────────────────────────────────
-// Returns list of users the current user has had conversations with,
-// plus their latest message (for the chat list sidebar).
+// Returns conversations for the sidebar.
+// - Messages I SENT: always show (even if receiver hasn't accepted yet)
+// - Messages I RECEIVED: only show accepted ones (isRequest: false)
 router.get('/users', async (req, res) => {
   try {
     const myId = req.user._id;
 
-    // Find all messages involving this user
     const messages = await ChatMessage.find({
-      $or: [{ senderId: myId }, { receiverId: myId }]
+      $or: [
+        { senderId: myId },                              // I sent — always show
+        { receiverId: myId, isRequest: false },          // I received — accepted only
+      ],
     })
       .sort({ createdAt: -1 })
       .populate('senderId',   'username')
       .populate('receiverId', 'username');
 
-    // Build a map of conversationPartnerId → latest message
     const convMap = new Map();
     for (const msg of messages) {
-      const partnerId = String(msg.senderId._id) === String(myId)
-        ? String(msg.receiverId._id)
-        : String(msg.senderId._id);
+      const isMe      = String(msg.senderId._id) === String(myId);
+      const partnerId = isMe ? String(msg.receiverId._id) : String(msg.senderId._id);
       if (!convMap.has(partnerId)) {
         convMap.set(partnerId, {
-          userId:   partnerId,
-          username: String(msg.senderId._id) === String(myId)
-            ? msg.receiverId.username
-            : msg.senderId.username,
+          userId:      partnerId,
+          username:    isMe ? msg.receiverId.username : msg.senderId.username,
           lastMessage: msg.content,
           lastAt:      msg.createdAt,
         });
@@ -49,8 +48,65 @@ router.get('/users', async (req, res) => {
   }
 });
 
+// ── GET /api/chat/requests ────────────────────────────────────────────────────
+// Pending message requests received by the current user
+router.get('/requests', async (req, res) => {
+  try {
+    const myId = req.user._id;
+
+    const grouped = await ChatMessage.aggregate([
+      { $match: { receiverId: myId, isRequest: true } },
+      { $sort:  { createdAt: 1 } },
+      { $group: { _id: '$senderId', content: { $first: '$content' }, createdAt: { $first: '$createdAt' } } },
+    ]);
+
+    const senderIds = grouped.map(g => g._id);
+    const senders   = await User.find({ _id: { $in: senderIds } }).select('username');
+    const nameMap   = Object.fromEntries(senders.map(s => [String(s._id), s.username]));
+
+    const requests = grouped.map(g => ({
+      senderId:  String(g._id),
+      username:  nameMap[String(g._id)] || 'Unknown',
+      preview:   g.content,
+      createdAt: g.createdAt,
+    }));
+
+    res.json({ requests });
+  } catch (err) {
+    console.error('Chat requests error', err);
+    res.status(500).json({ error: 'Failed to load requests' });
+  }
+});
+
+// ── POST /api/chat/requests/accept ────────────────────────────────────────────
+router.post('/requests/accept', async (req, res) => {
+  try {
+    const { senderId } = req.body;
+    if (!senderId) return res.status(400).json({ error: 'senderId required' });
+    await ChatMessage.updateMany(
+      { senderId, receiverId: req.user._id, isRequest: true },
+      { $set: { isRequest: false } }
+    );
+    res.json({ message: 'Request accepted' });
+  } catch (err) {
+    res.status(500).json({ error: 'Failed to accept request' });
+  }
+});
+
+// ── POST /api/chat/requests/reject ────────────────────────────────────────────
+router.post('/requests/reject', async (req, res) => {
+  try {
+    const { senderId } = req.body;
+    if (!senderId) return res.status(400).json({ error: 'senderId required' });
+    await ChatMessage.deleteMany({ senderId, receiverId: req.user._id, isRequest: true });
+    res.json({ message: 'Request rejected' });
+  } catch (err) {
+    res.status(500).json({ error: 'Failed to reject request' });
+  }
+});
+
 // ── GET /api/chat/search?q=username ──────────────────────────────────────────
-// Search users to start a new chat with — empty q returns all users
+// Search users — excludes admins, anonymous, banned
 router.get('/search', async (req, res) => {
   try {
     const { q = '' } = req.query;
@@ -59,6 +115,7 @@ router.get('/search', async (req, res) => {
       _id:         { $ne: req.user._id },
       isAnonymous: false,
       isBanned:    { $ne: true },
+      role:        { $ne: 'admin' },   // exclude admin accounts
     };
 
     if (q.trim()) {
@@ -77,20 +134,20 @@ router.get('/search', async (req, res) => {
 });
 
 // ── GET /api/chat/history/:userId ─────────────────────────────────────────────
-// Returns paginated message history between current user and :userId
+// Accepted messages only
 router.get('/history/:userId', async (req, res) => {
   try {
-    const myId     = req.user._id;
-    const otherId  = req.params.userId;
-    const page     = parseInt(req.query.page || '1');
-    const limit    = 50;
-    const skip     = (page - 1) * limit;
+    const myId    = req.user._id;
+    const otherId = req.params.userId;
+    const page    = parseInt(req.query.page || '1');
+    const limit   = 50;
+    const skip    = (page - 1) * limit;
 
     const messages = await ChatMessage.find({
       $or: [
-        { senderId: myId,    receiverId: otherId },
-        { senderId: otherId, receiverId: myId    },
-      ]
+        { senderId: myId,    receiverId: otherId },          // I sent — always show
+        { senderId: otherId, receiverId: myId, isRequest: false }, // they sent — accepted only
+      ],
     })
       .sort({ createdAt: -1 })
       .skip(skip)
@@ -98,10 +155,9 @@ router.get('/history/:userId', async (req, res) => {
       .populate('senderId',   'username')
       .populate('receiverId', 'username');
 
-    // Mark unread messages as delivered
     await ChatMessage.updateMany(
-      { senderId: otherId, receiverId: myId, status: 'sent' },
-      { status: 'delivered' }
+      { senderId: otherId, receiverId: myId, status: 'sent', isRequest: false },
+      { $set: { status: 'delivered' } }
     );
 
     res.json({ messages: messages.reverse() });
@@ -109,6 +165,25 @@ router.get('/history/:userId', async (req, res) => {
     console.error('Chat history error', err);
     res.status(500).json({ error: 'Failed to load history' });
   }
+});
+
+// ── POST /api/chat/seen/:userId ───────────────────────────────────────────────
+router.post('/seen/:userId', async (req, res) => {
+  try {
+    await ChatMessage.updateMany(
+      { senderId: req.params.userId, receiverId: req.user._id, status: { $ne: 'seen' }, isRequest: false },
+      { $set: { status: 'seen' } }
+    );
+    res.json({ ok: true });
+  } catch (err) {
+    res.status(500).json({ error: 'Failed to mark seen' });
+  }
+});
+
+// ── GET /api/chat/online ──────────────────────────────────────────────────────
+router.get('/online', (req, res) => {
+  const onlineUsers = req.app.get('onlineUsers') || new Set();
+  res.json({ onlineUsers: Array.from(onlineUsers) });
 });
 
 // ── POST /api/chat/block ──────────────────────────────────────────────────────
