@@ -127,7 +127,22 @@ router.post('/login', loginValidation, async (req, res) => {
 router.post('/anonymous', async (req, res) => {
   try {
     const sessionId = crypto.randomUUID();
-    const anonymousUsername = `anonymous_${Date.now()}`;
+
+    // Generate a friendly name like "CalmOtter42"
+    const adjectives = [
+      'Calm', 'Brave', 'Soft', 'Kind', 'Wise', 'Bold', 'Warm', 'Gentle',
+      'Happy', 'Quiet', 'Swift', 'Bright', 'Cool', 'Fuzzy', 'Sunny', 'Cozy',
+      'Mellow', 'Jolly', 'Serene', 'Lively'
+    ];
+    const nouns = [
+      'Otter', 'Panda', 'Robin', 'Cedar', 'River', 'Cloud', 'Maple', 'Stone',
+      'Ember', 'Finch', 'Lotus', 'Breeze', 'Coral', 'Fern', 'Sparrow', 'Willow',
+      'Sage', 'Birch', 'Clover', 'Dusk'
+    ];
+    const adj  = adjectives[Math.floor(Math.random() * adjectives.length)];
+    const noun = nouns[Math.floor(Math.random() * nouns.length)];
+    const num  = Math.floor(Math.random() * 90) + 10; // 10–99
+    const anonymousUsername = `${adj}${noun}${num}`;
 
     const user = new User({
       username: anonymousUsername,
