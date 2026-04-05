@@ -60,6 +60,12 @@ const userSchema = new mongoose.Schema({
   lastSeen: {
     type: Date,
     default: null
+  },
+  bio:    { type: String, default: '', maxlength: 300 },
+  avatar: { type: String, default: '' },
+  privacy: {
+    showOnlineStatus:     { type: Boolean, default: true },
+    allowMessageRequests: { type: Boolean, default: true },
   }
 }, {
   timestamps: true

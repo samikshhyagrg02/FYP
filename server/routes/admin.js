@@ -87,7 +87,7 @@ router.get('/users', async (req, res) => {
     const { search = '', status = 'all', page = 1, limit = 20 } = req.query;
     const skip = (parseInt(page) - 1) * parseInt(limit);
 
-    const query = { isAnonymous: false };
+    const query = { isAnonymous: false, role: { $ne: 'admin' } };
     if (search) query.username = { $regex: search, $options: 'i' };
     if (status === 'active')  query.isBanned = false;
     if (status === 'banned')  query.isBanned = true;

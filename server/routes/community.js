@@ -302,7 +302,7 @@ router.post('/groups/:id/posts', [
     });
 
     // Populate author info
-    await post.populate('userId', 'username isAnonymous');
+    await post.populate('userId', 'username isAnonymous avatar');
     await post.populate('groupId', 'name icon color');
 
     // Format response
@@ -419,8 +419,7 @@ router.get('/posts/:id/comments', [
       postId: req.params.id,
       isHidden: false
     })
-      .populate('userId', 'username isAnonymous')
-      .sort('createdAt');
+      .populate('userId', 'username isAnonymous avatar')
 
     // Format comments to handle anonymous users
     const formattedComments = comments.map(comment => {
@@ -479,7 +478,7 @@ router.post('/posts/:id/comments', [
     });
 
     // Populate author info
-    await comment.populate('userId', 'username isAnonymous');
+    await comment.populate('userId', 'username isAnonymous avatar');
 
     // Format response
     const commentObj = comment.toObject();

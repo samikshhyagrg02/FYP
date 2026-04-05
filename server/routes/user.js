@@ -75,6 +75,10 @@ router.put('/profile', [
     if (preferences) {
       updateData.preferences = { ...req.user.preferences, ...preferences };
     }
+    // New profile fields
+    if (req.body.bio      !== undefined) updateData.bio    = req.body.bio;
+    if (req.body.avatar   !== undefined) updateData.avatar = req.body.avatar;
+    if (req.body.privacy  !== undefined) updateData.privacy = { ...req.user.privacy, ...req.body.privacy };
 
     const updatedUser = await User.findByIdAndUpdate(
       userId,
@@ -90,6 +94,51 @@ router.put('/profile', [
   } catch (error) {
     console.error('Profile update error:', error);
     res.status(500).json({ error: 'Failed to update profile' });
+  }
+});
+
+// PUT /user/password
+router.put('/password', authenticateToken, async (req, res) => {
+  try {
+    const { currentPassword, newPassword } = req.body;
+    if (!currentPassword || !newPassword)
+      return res.status(400).json({ error: 'currentPassword and newPassword are required' });
+    if (newPassword.length < 8)
+      return res.status(400).json({ error: 'New password must be at least 8 characters' });
+    if (!/^(?=.*[a-z])(?=.*[A-Z])(?=.*\d)/.test(newPassword))
+      return res.status(400).json({ error: 'Password must contain uppercase, lowercase, and a number' });
+
+    const user = await User.findById(req.user._id);
+    const valid = await user.comparePassword(currentPassword);
+    if (!valid) return res.status(401).json({ error: 'Current password is incorrect' });
+
+    user.passwordHash = newPassword; // pre-save hook will hash it
+    await user.save();
+    res.json({ message: 'Password updated successfully' });
+  } catch (error) {
+    console.error('Password change error:', error);
+    res.status(500).json({ error: 'Failed to update password' });
+  }
+});
+
+// DELETE /user/account
+router.delete('/account', authenticateToken, async (req, res) => {
+  try {
+    const user = await User.findById(req.user._id);
+
+    // Anonymous users can delete without password
+    if (!user.isAnonymous) {
+      const { password } = req.body;
+      if (!password) return res.status(400).json({ error: 'Password is required to delete account' });
+      const valid = await user.comparePassword(password);
+      if (!valid) return res.status(401).json({ error: 'Incorrect password' });
+    }
+
+    await User.findByIdAndDelete(req.user._id);
+    res.json({ message: 'Account deleted successfully' });
+  } catch (error) {
+    console.error('Account delete error:', error);
+    res.status(500).json({ error: 'Failed to delete account' });
   }
 });
 

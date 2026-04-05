@@ -75,7 +75,7 @@ communityPostSchema.statics.getPostsWithAuthor = async function(query, options =
   const { limit = 20, skip = 0, sortBy = '-createdAt' } = options;
   
   return this.find(query)
-    .populate('userId', 'username isAnonymous')
+    .populate('userId', 'username isAnonymous avatar')
     .populate('groupId', 'name icon color')
     .sort(sortBy)
     .limit(limit)
