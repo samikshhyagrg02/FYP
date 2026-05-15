@@ -114,6 +114,33 @@ router.get('/monthly', authenticateToken, async (req, res) => {
 
     const analytics = await MoodEntry.getMonthlyAnalytics(req.user._id, targetYear, targetMonth);
 
+    // Format weekly data similar to weekly endpoint
+    const startDate = new Date(targetYear, targetMonth - 1, 1);
+    const endDate = new Date(targetYear, targetMonth, 0);
+    const weeksInMonth = Math.ceil((endDate.getDate() - startDate.getDate() + 1) / 7);
+
+    const weeklyData = [];
+    for (let week = 0; week < weeksInMonth; week++) {
+      const weekStart = new Date(startDate);
+      weekStart.setDate(startDate.getDate() + (week * 7));
+      
+      const weekEnd = new Date(weekStart);
+      weekEnd.setDate(weekStart.getDate() + 6);
+      
+      // Find analytics for this week
+      const weekData = analytics.find(item => {
+        // Calculate which week of the year this is
+        const weekOfYear = Math.ceil(((weekStart - new Date(weekStart.getFullYear(), 0, 1)) / 86400000 + 1) / 7);
+        return item._id.week === weekOfYear && item._id.year === targetYear;
+      });
+      
+      weeklyData.push({
+        date: weekStart.toISOString().split('T')[0],
+        averageMood: weekData ? Math.round(weekData.averageMood * 100) / 100 : null,
+        count: weekData ? weekData.count : 0
+      });
+    }
+
     // Calculate overall statistics
     const allEntries = await MoodEntry.find({
       userId: req.user._id,
@@ -142,7 +169,7 @@ router.get('/monthly', authenticateToken, async (req, res) => {
       totalEntries,
       averageMood: Math.round(averageMood * 100) / 100,
       moodDistribution,
-      weeklyData: analytics
+      weeklyData: weeklyData
     });
 
   } catch (error) {
@@ -155,10 +182,14 @@ router.get('/monthly', authenticateToken, async (req, res) => {
 router.get('/recent', authenticateToken, async (req, res) => {
   try {
     const limit = parseInt(req.query.limit) || 10;
+    const all = req.query.all === 'true';
+    
+    // If all=true, set a very high limit to get all records
+    const actualLimit = all ? 10000 : limit;
     
     const recentMoods = await MoodEntry.find({ userId: req.user._id })
       .sort({ createdAt: -1 })
-      .limit(limit);
+      .limit(actualLimit);
 
     res.json({
       moods: recentMoods
