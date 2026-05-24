@@ -5,6 +5,7 @@ const CommunityPost = require('../models/CommunityPost');
 const CommunityComment = require('../models/CommunityComment');
 const ContentReport = require('../models/ContentReport');
 const AdminLog = require('../models/AdminLog');
+const { createNotification, broadcastNotification } = require('../utils/notificationHelper');
 
 const router = express.Router();
 
@@ -253,9 +254,46 @@ router.patch('/report/:id', async (req, res) => {
       { new: true }
     );
     if (!report) return res.status(404).json({ error: 'Report not found' });
+
+    // Notify the reporter about the update
+    if (report.reportedBy && status !== 'pending') {
+      createNotification(req.app, {
+        userId:  report.reportedBy,
+        type:    'report_update',
+        title:   'Your report has been reviewed',
+        message: `Your content report has been ${status}. ${actionTaken ? `Action taken: ${actionTaken}` : ''}`.trim(),
+        link:    '/community/groups',
+      });
+    }
+
     res.json({ message: 'Report updated', report });
   } catch (err) {
     res.status(500).json({ error: 'Failed to update report' });
+  }
+});
+
+// ── POST /api/admin/announce ──────────────────────────────────────────────────
+// Broadcast an announcement to all non-anonymous, non-banned users
+router.post('/announce', async (req, res) => {
+  try {
+    const { title, message, link } = req.body;
+    if (!title || !message) return res.status(400).json({ error: 'title and message are required' });
+
+    const users = await User.find({ isAnonymous: false, isBanned: false }).select('_id');
+    const userIds = users.map(u => u._id);
+
+    await broadcastNotification(
+      req.app,
+      { title, message, link: link || null, fromUserId: req.user._id },
+      userIds
+    );
+
+    await logAction(req.user._id, 'broadcast_announcement', 'system', 'all', title);
+
+    res.json({ message: `Announcement sent to ${userIds.length} users` });
+  } catch (err) {
+    console.error('Announce error', err);
+    res.status(500).json({ error: 'Failed to send announcement' });
   }
 });
 

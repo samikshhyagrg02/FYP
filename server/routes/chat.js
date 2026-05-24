@@ -10,17 +10,15 @@ const router = express.Router();
 router.use(authenticateToken);
 
 // ── GET /api/chat/users ───────────────────────────────────────────────────────
-// Returns conversations for the sidebar.
-// - Messages I SENT: always show (even if receiver hasn't accepted yet)
-// - Messages I RECEIVED: only show accepted ones (isRequest: false)
+// Returns conversations for the sidebar with unread count per conversation.
 router.get('/users', async (req, res) => {
   try {
     const myId = req.user._id;
 
     const messages = await ChatMessage.find({
       $or: [
-        { senderId: myId },                              // I sent — always show
-        { receiverId: myId, isRequest: false },          // I received — accepted only
+        { senderId: myId },
+        { receiverId: myId, isRequest: false },
       ],
     })
       .sort({ createdAt: -1 })
@@ -37,11 +35,36 @@ router.get('/users', async (req, res) => {
           username:    isMe ? msg.receiverId.username : msg.senderId.username,
           lastMessage: msg.content,
           lastAt:      msg.createdAt,
+          // Track whether the last message was sent by the other person and not yet seen
+          lastMessageIsIncoming: !isMe,
+          lastMessageStatus: msg.status,
         });
       }
     }
 
-    res.json({ conversations: Array.from(convMap.values()) });
+    // Count unread messages per conversation (messages sent TO me, not yet seen)
+    const unreadCounts = await ChatMessage.aggregate([
+      {
+        $match: {
+          receiverId: myId,
+          isRequest:  false,
+          status:     { $in: ['sent', 'delivered'] },
+        },
+      },
+      { $group: { _id: '$senderId', count: { $sum: 1 } } },
+    ]);
+
+    const unreadMap = {};
+    for (const row of unreadCounts) {
+      unreadMap[String(row._id)] = row.count;
+    }
+
+    const conversations = Array.from(convMap.values()).map(conv => ({
+      ...conv,
+      unreadCount: unreadMap[conv.userId] || 0,
+    }));
+
+    res.json({ conversations });
   } catch (err) {
     console.error('Chat users error', err);
     res.status(500).json({ error: 'Failed to load conversations' });

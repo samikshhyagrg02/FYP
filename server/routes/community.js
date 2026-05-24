@@ -6,6 +6,7 @@ const CommunityPost = require('../models/CommunityPost');
 const CommunityComment = require('../models/CommunityComment');
 const GroupMembership = require('../models/GroupMembership');
 const ContentReport = require('../models/ContentReport');
+const { createNotification } = require('../utils/notificationHelper');
 
 const router = express.Router();
 
@@ -490,6 +491,19 @@ router.post('/posts/:id/comments', [
       message: 'Comment created successfully',
       comment: commentObj
     });
+
+    // Notify post author about the new comment (if not self-commenting)
+    if (String(post.userId) !== String(req.user._id)) {
+      const commenterName = comment.isAnonymous ? 'Someone' : req.user.username;
+      createNotification(req.app, {
+        userId:     post.userId,
+        type:       'community_activity',
+        title:      'New comment on your post',
+        message:    `${commenterName} commented: "${content.trim().slice(0, 80)}${content.trim().length > 80 ? '…' : ''}"`,
+        link:       `/community/groups/${post.groupId}`,
+        fromUserId: comment.isAnonymous ? null : req.user._id,
+      });
+    }
   } catch (error) {
     console.error('Create comment error:', error);
     res.status(500).json({ error: 'Failed to create comment' });

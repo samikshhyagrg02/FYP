@@ -16,6 +16,9 @@ const communityRoutes = require('./routes/community');
 const gamificationRoutes = require('./routes/gamification');
 const adminRoutes = require('./routes/admin');
 const chatRoutes  = require('./routes/chat');
+const notificationRoutes = require('./routes/notifications');
+const { createNotification } = require('./utils/notificationHelper');
+const { startScheduler } = require('./utils/reminderScheduler');
 const ChatMessage = require('./models/ChatMessage');
 const ChatBlock   = require('./models/ChatBlock');
 const User        = require('./models/User');
@@ -44,6 +47,9 @@ io.use((socket, next) => {
     next(new Error('Invalid token'));
   }
 });
+
+// Expose io on app so routes can emit events
+app.set('io', io);
 
 // ── Socket.IO: connection handler ─────────────────────────────────────────────
 io.on('connection', (socket) => {
@@ -100,9 +106,27 @@ io.on('connection', (socket) => {
       if (isRequest) {
         // Notify receiver of a new message request (separate event)
         io.to(receiverId).emit('chat:request', populated);
+        // Create persistent notification
+        createNotification(app, {
+          userId:     receiverId,
+          type:       'message_request',
+          title:      'New Message Request',
+          message:    `${populated.senderId.username} sent you a message request`,
+          link:       '/chat',
+          fromUserId: socket.userId,
+        });
       } else {
         // Normal message — deliver to receiver's room
         io.to(receiverId).emit('chat:message', populated);
+        // Create persistent notification
+        createNotification(app, {
+          userId:     receiverId,
+          type:       'new_message',
+          title:      'New Message',
+          message:    `${populated.senderId.username}: ${content.trim().slice(0, 80)}${content.trim().length > 80 ? '…' : ''}`,
+          link:       '/chat',
+          fromUserId: socket.userId,
+        });
       }
       // Always confirm back to sender
       socket.emit('chat:message', populated);
@@ -162,7 +186,10 @@ mongoose.connect(process.env.MONGODB_URI || 'mongodb://localhost:27017/mindbloom
   useNewUrlParser: true,
   useUnifiedTopology: true,
 })
-.then(() => console.log('Connected to MongoDB'))
+.then(() => {
+  console.log('Connected to MongoDB');
+  startScheduler(app); // start reminder scheduler after DB is ready
+})
 .catch(err => console.error('MongoDB connection error:', err));
 
 // Routes
@@ -174,6 +201,7 @@ app.use('/api/community', communityRoutes);
 app.use('/api/gamification', gamificationRoutes);
 app.use('/api/admin', adminRoutes);
 app.use('/api/chat',  chatRoutes);
+app.use('/api/notifications', notificationRoutes);
 
 // Error handling middleware
 app.use((err, req, res, next) => {

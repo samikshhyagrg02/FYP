@@ -1,6 +1,7 @@
 const express = require('express');
 const { authenticateToken } = require('../middleware/auth');
 const { UserProgress, ActivityLog, AchievementDef } = require('../models/MindbloomGamification');
+const { createNotification } = require('../utils/notificationHelper');
 
 const router = express.Router();
 
@@ -58,6 +59,20 @@ router.post('/activity', authenticateToken, async (req, res) => {
       newAchievements: result.newAchievements,
       progress
     });
+
+    // Fire achievement notifications (after response sent)
+    if (result.newAchievements && result.newAchievements.length > 0) {
+      for (const ach of result.newAchievements) {
+        createNotification(req.app, {
+          userId:  req.user._id,
+          type:    'achievement_unlocked',
+          title:   `Achievement Unlocked: ${ach.name}`,
+          message: ach.description || `You earned the "${ach.name}" achievement!`,
+          link:    '/achievements',
+          meta:    { achievementId: ach.id, icon: ach.icon, bonusXp: ach.bonusXp },
+        });
+      }
+    }
   } catch (err) {
     console.error('POST /gamification/activity', err);
     res.status(500).json({ error: 'Failed to record activity' });
