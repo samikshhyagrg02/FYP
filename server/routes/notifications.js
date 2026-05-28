@@ -124,6 +124,19 @@ router.post('/', async (req, res) => {
   }
 });
 
+// ── PATCH /api/notifications/read-all ────────────────────────────────────────
+router.patch('/read-all', async (req, res) => {
+  try {
+    await Notification.updateMany(
+      { userId: req.user._id, isRead: false },
+      { isRead: true }
+    );
+    res.json({ message: 'All notifications marked as read' });
+  } catch (err) {
+    res.status(500).json({ error: 'Failed to mark all as read' });
+  }
+});
+
 // ── PATCH /api/notifications/:id/read ────────────────────────────────────────
 router.patch('/:id/read', async (req, res) => {
   try {
@@ -139,16 +152,13 @@ router.patch('/:id/read', async (req, res) => {
   }
 });
 
-// ── PATCH /api/notifications/read-all ────────────────────────────────────────
-router.patch('/read-all', async (req, res) => {
+// ── DELETE /api/notifications/clear-all ──────────────────────────────────────
+router.delete('/clear-all', async (req, res) => {
   try {
-    await Notification.updateMany(
-      { userId: req.user._id, isRead: false },
-      { isRead: true }
-    );
-    res.json({ message: 'All notifications marked as read' });
+    await Notification.deleteMany({ userId: req.user._id });
+    res.json({ message: 'All notifications cleared' });
   } catch (err) {
-    res.status(500).json({ error: 'Failed to mark all as read' });
+    res.status(500).json({ error: 'Failed to clear notifications' });
   }
 });
 
@@ -163,16 +173,6 @@ router.delete('/:id', async (req, res) => {
     res.json({ message: 'Notification deleted' });
   } catch (err) {
     res.status(500).json({ error: 'Failed to delete notification' });
-  }
-});
-
-// ── DELETE /api/notifications/clear-all ──────────────────────────────────────
-router.delete('/clear-all', async (req, res) => {
-  try {
-    await Notification.deleteMany({ userId: req.user._id });
-    res.json({ message: 'All notifications cleared' });
-  } catch (err) {
-    res.status(500).json({ error: 'Failed to clear notifications' });
   }
 });
 

@@ -50,152 +50,129 @@ function daysAgo(n) {
   return d;
 }
 
-/** Fetch all non-anonymous, non-banned regular users */
+/** Fetch all non-anonymous, non-banned users (any role) */
 async function getActiveUsers() {
-  return User.find({ isAnonymous: false, isBanned: false, role: 'user' }).select('_id username');
+  const allUsers = await User.find({ isAnonymous: false }).select('_id username isBanned');
+  const active = allUsers.filter(u => !u.isBanned);
+  const banned = allUsers.filter(u => u.isBanned);
+
+  console.log(`[Scheduler] Total non-anonymous users: ${allUsers.length}`);
+  console.log(`[Scheduler] Active (not banned): ${active.length} →`, active.map(u => u.username));
+  if (banned.length) console.log(`[Scheduler] Banned (excluded): ${banned.length} →`, banned.map(u => u.username));
+
+  // Also log how many anonymous users exist (excluded by design)
+  const anonCount = await User.countDocuments({ isAnonymous: true });
+  console.log(`[Scheduler] Anonymous users (excluded by design): ${anonCount}`);
+
+  return active;
 }
 
 // ── Job: Mood Reminder (daily 20:00) ─────────────────────────────────────────
-async function runMoodReminder(app) {
+async function runMoodReminder(app, { force = false, scheduledRun = false } = {}) {
   try {
     const users = await getActiveUsers();
     const today = startOfToday();
+    console.log(`[Scheduler] MoodReminder: checking ${users.length} users, today starts at ${today.toISOString()}, force=${force}`);
+    let sent = 0;
 
     for (const user of users) {
-      const logged = await MoodEntry.findOne({
-        userId: user._id,
-        createdAt: { $gte: today },
-      });
-      if (!logged) {
-        await createNotification(app, {
-          userId:  user._id,
-          type:    'mood_reminder',
-          title:   "How are you feeling today? 😊",
-          message: "You haven't logged your mood yet. Take a moment to check in with yourself.",
-          link:    '/mood',
+      if (!force) {
+        const logged = await MoodEntry.findOne({
+          userId: user._id,
+          createdAt: { $gte: today },
         });
+        console.log(`[Scheduler] MoodReminder: user ${user.username} — logged today: ${!!logged}`);
+        if (logged) continue;
       }
+      const result = await createNotification(app, {
+        userId:  user._id,
+        type:    'mood_reminder',
+        title:   "How are you feeling today? 😊",
+        message: "You haven't logged your mood yet. Take a moment to check in with yourself.",
+        link:    '/mood',
+      });
+      console.log(`[Scheduler] MoodReminder: notification for ${user.username} — result: ${result ? 'sent' : 'skipped (prefs)'}`);
+      if (result) sent++;
     }
-    console.log('[Scheduler] Mood reminders sent');
+    console.log(`[Scheduler] Mood reminders sent to ${sent}/${users.length} users`);
+    return sent;
   } catch (err) {
     console.error('[Scheduler] Mood reminder error:', err);
+    throw err;
   }
 }
 
 // ── Job: Journal Reminder (daily 20:30) ──────────────────────────────────────
-async function runJournalReminder(app) {
+async function runJournalReminder(app, { force = false } = {}) {
   try {
     const users = await getActiveUsers();
     const twoDaysAgo = daysAgo(2);
+    let sent = 0;
 
     for (const user of users) {
-      const recent = await JournalEntry.findOne({
-        userId: user._id,
-        createdAt: { $gte: twoDaysAgo },
-      });
-      if (!recent) {
-        await createNotification(app, {
-          userId:  user._id,
-          type:    'journal_reminder',
-          title:   "Time to write 📝",
-          message: "You haven't journalled in a couple of days. Writing helps process your thoughts and emotions.",
-          link:    '/journal',
+      if (!force) {
+        const recent = await JournalEntry.findOne({
+          userId: user._id,
+          createdAt: { $gte: twoDaysAgo },
         });
+        if (recent) continue;
       }
+      const result = await createNotification(app, {
+        userId:  user._id,
+        type:    'journal_reminder',
+        title:   "Time to write 📝",
+        message: "You haven't journalled in a couple of days. Writing helps process your thoughts and emotions.",
+        link:    '/journal',
+      });
+      if (result) sent++;
     }
-    console.log('[Scheduler] Journal reminders sent');
+    console.log(`[Scheduler] Journal reminders sent to ${sent}/${users.length} users`);
+    return sent;
   } catch (err) {
     console.error('[Scheduler] Journal reminder error:', err);
+    throw err;
   }
 }
 
 // ── Job: Meditation Reminder (daily 09:00) ────────────────────────────────────
-async function runMeditationReminder(app) {
+async function runMeditationReminder(app, { force = false } = {}) {
   try {
     const users = await getActiveUsers();
     const today = startOfToday();
+    let sent = 0;
 
     for (const user of users) {
-      const activity = await ActivityLog.findOne({
-        userId:      user._id,
-        completedAt: { $gte: today },
-      });
-      if (!activity) {
-        await createNotification(app, {
-          userId:  user._id,
-          type:    'meditation_reminder',
-          title:   "Start your day mindfully 🧘",
-          message: "A few minutes of breathing or meditation can set a calm tone for your whole day.",
-          link:    '/mindfulness',
+      if (!force) {
+        const activity = await ActivityLog.findOne({
+          userId:      user._id,
+          completedAt: { $gte: today },
         });
+        if (activity) continue;
       }
+      const result = await createNotification(app, {
+        userId:  user._id,
+        type:    'meditation_reminder',
+        title:   "Start your day mindfully 🧘",
+        message: "A few minutes of breathing or meditation can set a calm tone for your whole day.",
+        link:    '/mindfulness',
+      });
+      if (result) sent++;
     }
-    console.log('[Scheduler] Meditation reminders sent');
+    console.log(`[Scheduler] Meditation reminders sent to ${sent}/${users.length} users`);
+    return sent;
   } catch (err) {
     console.error('[Scheduler] Meditation reminder error:', err);
+    throw err;
   }
 }
 
-// ── Job: Weekly Summary (every Monday 08:00) ──────────────────────────────────
-async function runWeeklySummary(app) {
-  // Only run on Mondays
-  if (new Date().getDay() !== 1) return;
 
-  try {
-    const users = await getActiveUsers();
-
-    // Last week: Mon–Sun
-    const now       = new Date();
-    const monday    = new Date(now);
-    monday.setDate(now.getDate() - 7);
-    monday.setHours(0, 0, 0, 0);
-    const sunday    = new Date(monday);
-    sunday.setDate(monday.getDate() + 7);
-
-    for (const user of users) {
-      const [moodEntries, activities, progress] = await Promise.all([
-        MoodEntry.find({ userId: user._id, createdAt: { $gte: monday, $lt: sunday } }),
-        ActivityLog.find({ userId: user._id, completedAt: { $gte: monday, $lt: sunday } }),
-        UserProgress.findOne({ userId: user._id }),
-      ]);
-
-      const moodCount  = moodEntries.length;
-      const avgMood    = moodCount
-        ? (moodEntries.reduce((s, e) => s + e.moodValue, 0) / moodCount).toFixed(1)
-        : null;
-      const actCount   = activities.length;
-      const xpEarned   = activities.reduce((s, a) => s + a.xpEarned, 0);
-      const streak     = progress?.currentStreak ?? 0;
-
-      // Only send if user had any activity last week
-      if (moodCount === 0 && actCount === 0) continue;
-
-      const parts = [];
-      if (moodCount > 0) parts.push(`${moodCount} mood log${moodCount > 1 ? 's' : ''} (avg ${avgMood}/5)`);
-      if (actCount  > 0) parts.push(`${actCount} mindfulness session${actCount > 1 ? 's' : ''}`);
-      if (xpEarned  > 0) parts.push(`${xpEarned} XP earned`);
-      if (streak    > 0) parts.push(`${streak}-day streak`);
-
-      await createNotification(app, {
-        userId:  user._id,
-        type:    'weekly_summary',
-        title:   "Your weekly wellness recap 📊",
-        message: `Last week: ${parts.join(' · ')}. Keep up the great work!`,
-        link:    '/dashboard',
-      });
-    }
-    console.log('[Scheduler] Weekly summaries sent');
-  } catch (err) {
-    console.error('[Scheduler] Weekly summary error:', err);
-  }
-}
 
 // ── Schedule a job to run daily at a fixed time ───────────────────────────────
 function scheduleDailyJob(name, hours, minutes, fn, app) {
   const run = async () => {
     console.log(`[Scheduler] Running ${name}`);
-    await fn(app);
-    // Schedule next run in exactly 24 hours
+    await fn(app, { force: false, scheduledRun: true });
     setTimeout(run, 24 * 60 * 60 * 1000);
   };
 
@@ -205,13 +182,16 @@ function scheduleDailyJob(name, hours, minutes, fn, app) {
   setTimeout(run, delay);
 }
 
-// ── Public: start all schedulers ─────────────────────────────────────────────
 function startScheduler(app) {
   console.log('[Scheduler] Starting reminder scheduler...');
   scheduleDailyJob('MeditationReminder', 9,  0,  runMeditationReminder, app);
   scheduleDailyJob('MoodReminder',       20, 0,  runMoodReminder,       app);
   scheduleDailyJob('JournalReminder',    20, 30, runJournalReminder,    app);
-  scheduleDailyJob('WeeklySummary',      8,  0,  runWeeklySummary,      app);
 }
 
-module.exports = { startScheduler };
+module.exports = {
+  startScheduler,
+  runMoodReminder,
+  runJournalReminder,
+  runMeditationReminder,
+};

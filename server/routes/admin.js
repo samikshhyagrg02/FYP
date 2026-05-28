@@ -6,6 +6,11 @@ const CommunityComment = require('../models/CommunityComment');
 const ContentReport = require('../models/ContentReport');
 const AdminLog = require('../models/AdminLog');
 const { createNotification, broadcastNotification } = require('../utils/notificationHelper');
+const {
+  runMoodReminder,
+  runJournalReminder,
+  runMeditationReminder,
+} = require('../utils/reminderScheduler');
 
 const router = express.Router();
 
@@ -294,6 +299,29 @@ router.post('/announce', async (req, res) => {
   } catch (err) {
     console.error('Announce error', err);
     res.status(500).json({ error: 'Failed to send announcement' });
+  }
+});
+
+// ── POST /api/admin/trigger-reminder ─────────────────────────────────────────
+// Manually fire a reminder job — only sends to users who haven't used the feature
+// Body: { type: 'mood' | 'journal' | 'meditation' }
+router.post('/trigger-reminder', async (req, res) => {
+  const { type } = req.body;
+  const jobs = {
+    mood:        runMoodReminder,
+    journal:     runJournalReminder,
+    meditation:  runMeditationReminder,
+  };
+  const job = jobs[type];
+  if (!job) {
+    return res.status(400).json({ error: 'Invalid type. Use: mood, journal, meditation' });
+  }
+  try {
+    const sent = await job(req.app, { force: false });
+    res.json({ message: `${type} reminder sent to ${sent} user(s) who haven't used this feature` });
+  } catch (err) {
+    console.error('Trigger reminder error:', err);
+    res.status(500).json({ error: 'Failed to trigger reminder: ' + err.message });
   }
 });
 

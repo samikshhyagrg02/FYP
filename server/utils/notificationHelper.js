@@ -30,8 +30,16 @@ async function createNotification(app, { userId, type, title, message, link, met
     // Check user preferences
     const prefs = await NotificationPreference.findOne({ userId });
     if (prefs) {
-      if (prefs.muted) return null;
-      if (prefs[type] === false) return null;
+      if (prefs.muted) {
+        console.log(`[Notification] Skipped for userId=${userId} — muted`);
+        return null;
+      }
+      if (prefs[type] === false) {
+        console.log(`[Notification] Skipped for userId=${userId} — type '${type}' disabled in prefs`);
+        return null;
+      }
+    } else {
+      console.log(`[Notification] No prefs doc for userId=${userId} — proceeding with defaults`);
     }
 
     const notification = await Notification.create({
@@ -50,6 +58,9 @@ async function createNotification(app, { userId, type, title, message, link, met
     const io = app.get('io');
     if (io) {
       io.to(String(userId)).emit('notification:new', populated);
+      console.log(`[Notification] Created & emitted '${type}' to userId=${userId}`);
+    } else {
+      console.log(`[Notification] Created '${type}' for userId=${userId} — no io instance, real-time skipped`);
     }
 
     return populated;
